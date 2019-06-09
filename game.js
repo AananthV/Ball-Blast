@@ -60,7 +60,7 @@ let gameStarted = false;
 let highScore = null;
 let canvas = null;
 let images = {
-  background: "./media/cave.jpg",
+  background: "./media/cave.jpg", // https://www.artstation.com/artwork/Jr9Ba
   rock: "./media/rock.png",
   cannon: "./media/cannon.png"
 };
@@ -77,8 +77,8 @@ let colors = {
   ]
 };
 let sounds = {
-  background: new sound("./media/8bitwin.mp3"),
-  explosion: new sound("./media/explosion.mp3")
+  background: new sound("./media/8bitwin.mp3"), // Credits to https://www.youtube.com/watch?v=vX1xq4Ud2z8
+  explosion: new sound("./media/explosion.mp3") // https://www.freesoundeffects.com/free-sounds/explosion-10070/
 }
 const OBJECT_CIRCLE = 0;
 const OBJECT_RECT = 1;
