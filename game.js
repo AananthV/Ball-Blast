@@ -22,7 +22,22 @@
 	window.setZeroTimeout = setZeroTimeout;
 })();
 
-var loadImages = function(sources, callback){
+let sound = function(src) {
+  this.sound = document.createElement("audio");
+  this.sound.src = src;
+  this.sound.setAttribute("preload", "auto");
+  this.sound.setAttribute("controls", "none");
+  this.sound.style.display = "none";
+  document.body.appendChild(this.sound);
+  this.play = function(){
+    this.sound.play();
+  }
+  this.stop = function(){
+    this.sound.pause();
+  }
+}
+
+let loadImages = function(sources, callback){
 	var nb = 0;
 	var loaded = 0;
 	var imgs = {};
@@ -41,12 +56,18 @@ var loadImages = function(sources, callback){
 
 let FPS = 90;
 let game = null;
+let gameStarted = false;
+let highScore = null;
 let canvas = null;
-let images = {};
+let images = {
+  background: "./media/cave.jpg",
+  rock: "./media/rock.png",
+  cannon: "./media/cannon.png"
+};
 let colors = {
   cannon: "red",
-  bullet: "black",
-  surface: "green",
+  bullet: "white",
+  surface: "#2f4f4f",
   rock: [
     "#264b96",
     "#27b376",
@@ -54,6 +75,10 @@ let colors = {
     "#f9a73e",
     "#bf212f",
   ]
+};
+let sounds = {
+  background: new sound("./media/8bitwin.mp3"),
+  explosion: new sound("./media/explosion.mp3")
 }
 const OBJECT_CIRCLE = 0;
 const OBJECT_RECT = 1;
@@ -96,7 +121,7 @@ class GameObject {
 
 class Circle extends GameObject {
   constructor(center, radius, velocity, acceleration, strength, color, image = undefined) {
-    super(OBJECT_CIRCLE, center, velocity, acceleration, color);
+    super(OBJECT_CIRCLE, center, velocity, acceleration, color, image);
     this.radius = radius;
     this.strength = strength;
     this.originalStrength = strength;
@@ -163,12 +188,17 @@ class Circle extends GameObject {
     ctx.arc(0, 0, this.radius, 0, 2*Math.PI);
     ctx.fillStyle = this.color;
     ctx.fill();
+
+    if(this.image != undefined) {
+      ctx.drawImage(this.image, -this.radius, -this.radius, 2*this.radius, 2*this.radius);
+    }
+
     ctx.restore();
   }
 
   drawStrength(ctx) {
     ctx.save();
-    ctx.fillStyle = "black";
+    ctx.fillStyle = "white";
     ctx.font="20px Oswald, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(this.strength, ...this.center);
@@ -192,15 +222,26 @@ class Rect extends GameObject {
     ctx.beginPath();
     ctx.translate(...this.center);
     ctx.fillStyle = this.color;
+
+    if(this.image != undefined) {
+      ctx.drawImage(
+        this.image,
+        - Math.round(this.dimensions[0]/2),
+        - Math.round(this.dimensions[1]/2),
+        ...this.dimensions
+      );
+
+      ctx.fillStyle = "transparent";
+    }
     ctx.fillRect(...this.returnDrawingCoordinates());
     ctx.restore();
   }
 }
 
 class Game {
-  constructor(canvas, images, colors) {
+  constructor(canvas, images, colors, sounds) {
     let self = this;
-    document.addEventListener("keydown", function(e) { self.setDirection(e, self) }, true);
+    document.addEventListener("keydown", function(e) { self.handleKeyPress(e, self) }, true);
     document.addEventListener("keyup", function(e) { self.stopMotion(e, self) }, true);
 
     this.canvas = canvas;
@@ -209,11 +250,20 @@ class Game {
     this.height = this.canvas.height;
     this.images = images;
     this.colors = colors;
+    this.sounds = sounds;
+
+    gameStarted = false;
+    this.isPaused = false;
 
     this.rocks = [];
     this.bullets = [];
     this.cannon = undefined;
-    this.surface = undefined;
+    this.surface = new Rect(
+      [Math.round(this.width/2), Math.round(this.height*(11/12))],
+      [this.width, Math.round(this.height*(1/6))],
+      this.colors.surface,
+      this.images.surface
+    );
     this.background = this.images.background;
 
 
@@ -225,7 +275,7 @@ class Game {
     this.maxRockVelocity = [1, 1];
     this.gravity = 0.02;
 
-    this.bulletRadius = 3;
+    this.bulletRadius = 2;
     this.bulletVelocity = [0, -3];
     this.bulletStrength = 2;
     this.bulletAcceleration = [0, 0];
@@ -236,20 +286,39 @@ class Game {
     this.bulletSpawnInterval = 5;
   }
 
+  showMenu() {
+    this.ctx.clearRect(0, 0, this.width, this.height);
+
+    if(this.background != undefined) {
+      this.ctx.drawImage(this.background, 0, 0, this.width, this.height);
+    }
+
+    this.surface.draw(this.ctx);
+
+    this.ctx.save();
+    this.ctx.globalAlpha = 0.5;
+    this.ctx.fillRect(0, this.height*0.2, this.width, this.height*0.6);
+    this.ctx.globalAlpha = 1;
+    this.ctx.fillStyle = "white";
+  	this.ctx.font="20px Oswald, sans-serif";
+    this.ctx.textAlign = "center";
+    this.ctx.fillText("HighScore = " + highScore, Math.round(this.width/2), Math.round(this.height*0.3));
+    this.ctx.fillText("Use <- -> or A/D to Move", Math.round(this.width/2), Math.round(this.height*0.45));
+    this.ctx.fillText("Press P to pause and R to resume", Math.round(this.width/2), Math.round(this.height*0.55));
+    this.ctx.fillText("Press any key to start!", Math.round(this.width/2), Math.round(this.height*0.7));
+    this.ctx.restore();
+  }
+
   start() {
+    gameStarted = true;
     this.score = 0;
     this.interval = 0;
     this.levelFactor = 0;
-
-    this.surface = new Rect(
-      [Math.round(this.width/2), Math.round(this.height*(11/12))],
-      [this.width, Math.round(this.height*(1/6))],
-      this.colors.bg,
-      this.images.bg
-    );
+    this.isPaused = false;
+    this.sounds.background.play();
 
     this.cannon = new Rect(
-      [Math.round(this.width/2), Math.round(this.height*(5/6))],
+      [Math.round(this.width/2), Math.round(this.height*(59/72))],
       [Math.round(this.width/6), Math.round(this.height/18)],
       this.colors.cannon,
       this.images.cannon
@@ -326,23 +395,35 @@ class Game {
 
       // Rock and Cannon
       if(this.rocks[i].isCollideWithRect(this.cannon)) {
-        this.start();
+        this.stop();
         break;
       }
 
       // Rock and top and bottom surface
       if(
-        this.rocks[i].isCollideWithRect(this.surface) ||
+        this.rocks[i].isCollideWithRect(this.surface)
+      ) {
+        this.rocks[i].center[1] = this.surface.center[1] - this.surface.dimensions[1]/2 - this.rocks[i].radius;
+        this.rocks[i].velocity[1] = -this.rocks[i].velocity[1];
+      }
+      if(
         this.rocks[i].center[1] - this.rocks[i].radius < 0
       ) {
+        this.rocks[i].center[1] = this.rocks[i].radius;
         this.rocks[i].velocity[1] = -this.rocks[i].velocity[1];
       }
 
       // Rock and sides of canvas
       if(
-        this.rocks[i].center[0] - this.rocks[i].radius < 0 ||
+        this.rocks[i].center[0] - this.rocks[i].radius < 0
+      ) {
+        this.rocks[i].center[0] = this.rocks[i].radius;
+        this.rocks[i].velocity[0] = -this.rocks[i].velocity[0];
+      }
+      if(
         this.rocks[i].center[0] + this.rocks[i].radius > this.width
       ) {
+        this.rocks[i].center[0] = this.width - this.rocks[i].radius;
         this.rocks[i].velocity[0] = -this.rocks[i].velocity[0];
       }
     }
@@ -411,7 +492,7 @@ class Game {
       // center, radius, velocity, acceleration, strength, color, image
       new Circle(
         [
-          this.cannon.center[0] + Math.round(this.cannon.dimensions[0]/4),
+          this.cannon.center[0] + Math.round(this.cannon.dimensions[0]/6),
           this.cannon.center[1] - Math.round(this.cannon.dimensions[1]/2),
         ],
         this.bulletRadius,
@@ -423,7 +504,7 @@ class Game {
       ),
       new Circle(
         [
-          this.cannon.center[0] - Math.round(this.cannon.dimensions[0]/4),
+          this.cannon.center[0] - Math.round(this.cannon.dimensions[0]/6),
           this.cannon.center[1] - Math.round(this.cannon.dimensions[1]/2),
         ],
         this.bulletRadius,
@@ -437,6 +518,7 @@ class Game {
   }
 
   update() {
+    if(gameStarted == false || this.isPaused == true) return;
     this.cannon.update();
     this.checkCollisions()
 
@@ -467,7 +549,12 @@ class Game {
   }
 
   display() {
+    if(gameStarted == false) return;
     this.ctx.clearRect(0, 0, this.width, this.height);
+
+    if(this.background != undefined) {
+      this.ctx.drawImage(this.background, 0, 0, this.width, this.height);
+    }
 
     this.surface.draw(this.ctx);
 
@@ -483,8 +570,10 @@ class Game {
     }
 
     this.ctx.save();
-    this.ctx.fillStyle = "black";
-    this.ctx.fillText("Score : "+ this.score, 10, 25);
+  	this.ctx.font="40px Oswald, sans-serif";
+    this.ctx.fillStyle = "white";
+    this.ctx.textAlign = "center";
+    this.ctx.fillText(this.score, Math.round(this.width/2), this.height*0.2);
     this.ctx.restore();
 
     let self = this;
@@ -493,17 +582,66 @@ class Game {
     });
   }
 
-  setDirection(e, self) {
-    if(e.keyCode == 37) {
-      self.cannon.velocity = [-2, 0];
+  stop() {
+    gameStarted = false;
+    if(this.sounds.explosion != undefined) {
+      this.sounds.explosion.play();
     }
-    if(e.keyCode == 39) {
-      self.cannon.velocity = [2, 0];
+    if(this.score > highScore) {
+      highScore = this.score;
+      localStorage.setItem("hs", highScore);
+    }
+
+    this.ctx.clearRect(0, 0, this.width, this.height);
+
+    if(this.background != undefined) {
+      this.ctx.drawImage(this.background, 0, 0, this.width, this.height);
+    }
+
+    this.surface.draw(this.ctx);
+
+    this.ctx.save();
+    this.ctx.globalAlpha = 0.5;
+    this.ctx.fillRect(0, this.height*0.2, this.width, this.height*0.6);
+    this.ctx.globalAlpha = 1;
+    this.ctx.fillStyle = "white";
+    this.ctx.font="20px Oswald, sans-serif";
+    this.ctx.textAlign = "center";
+    this.ctx.fillText("Score = " + this.score, Math.round(this.width/2), Math.round(this.height*0.3));
+    this.ctx.fillText("HighScore = " + highScore, Math.round(this.width/2), Math.round(this.height*0.4));
+    this.ctx.fillText("Press any key to start!", Math.round(this.width/2), Math.round(this.height*0.65));
+    this.ctx.restore();
+
+    this.sounds.background.stop();
+  }
+
+  handleKeyPress(e, self) {
+    if(gameStarted == true) {
+      if(self.isPaused == false) {
+        if(e.keyCode == 37) {
+          self.cannon.velocity = [-2, 0];
+        }
+        if(e.keyCode == 39) {
+          self.cannon.velocity = [2, 0];
+        }
+        if(e.keyCode == 80) {
+          this.isPaused = true;
+        }
+      } else {
+        if(e.keyCode == 82) {
+          self.isPaused = false;
+          self.update();
+        }
+      }
+    } else {
+      self.start();
+      self.update();
+      self.display();
     }
   }
 
   stopMotion(e, self) {
-    if(e.keyCode == 37 || e.keyCode == 39) {
+    if(gameStarted == true && this.isPaused == false && (e.keyCode == 37 || e.keyCode == 39)) {
       self.cannon.velocity = [0, 0];
     }
   }
@@ -511,8 +649,13 @@ class Game {
 
 window.onload = function() {
   canvas = document.querySelector("#game");
-  game = new Game(canvas, images, colors);
-  game.start();
-  game.update();
-  game.display();
+  highScore = localStorage.getItem("hs") || 0;
+  let start = function(imgs) {
+    game = new Game(canvas, imgs, colors, sounds);
+    game.showMenu();
+  };
+
+  loadImages(images, function(imgs){
+    start(imgs);
+  });
 }
