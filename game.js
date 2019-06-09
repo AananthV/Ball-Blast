@@ -618,10 +618,10 @@ class Game {
   handleKeyPress(e, self) {
     if(gameStarted == true) {
       if(self.isPaused == false) {
-        if(e.keyCode == 37) {
+        if(e.keyCode == 37 || e.keyCode == 65) {
           self.cannon.velocity = [-2, 0];
         }
-        if(e.keyCode == 39) {
+        if(e.keyCode == 39 || e.keyCode == 68) {
           self.cannon.velocity = [2, 0];
         }
         if(e.keyCode == 80) {
@@ -641,7 +641,10 @@ class Game {
   }
 
   stopMotion(e, self) {
-    if(gameStarted == true && this.isPaused == false && (e.keyCode == 37 || e.keyCode == 39)) {
+    if(
+      gameStarted == true && this.isPaused == false &&
+      (e.keyCode == 37 || e.keyCode == 39 || e.keyCode == 65 || e.keyCode == 68)
+    ) {
       self.cannon.velocity = [0, 0];
     }
   }
