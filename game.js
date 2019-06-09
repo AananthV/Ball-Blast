@@ -99,6 +99,7 @@ class Circle extends GameObject {
     super(OBJECT_CIRCLE, center, velocity, acceleration, color);
     this.radius = radius;
     this.strength = strength;
+    this.originalStrength = strength;
   }
 
   isCollideWithObject(object, objectType) {
@@ -215,25 +216,30 @@ class Game {
     this.surface = undefined;
     this.background = this.images.background;
 
-    this.rockStrength = 50;
+
+    this.levelFactor = 0;
+    this.levelScore = 200;
+
+    this.minRockStrength = 50;
     this.rockRadius = Math.round(this.width/10);
     this.maxRockVelocity = [1, 1];
     this.gravity = 0.02;
 
     this.bulletRadius = 3;
     this.bulletVelocity = [0, -3];
-    this.bulletStrength = 1;
+    this.bulletStrength = 2;
     this.bulletAcceleration = [0, 0];
 
     this.score = 0;
     this.interval = 0;
     this.rockSpawnInterval = 270;
-    this.bulletSpawnInterval = 3;
+    this.bulletSpawnInterval = 5;
   }
 
   start() {
     this.score = 0;
     this.interval = 0;
+    this.levelFactor = 0;
 
     this.surface = new Rect(
       [Math.round(this.width/2), Math.round(this.height*(11/12))],
@@ -269,12 +275,51 @@ class Game {
       for(let b = 0; b < this.bullets.length; b++) {
         if(this.rocks[i].isCollideWithCircle(this.bullets[b])) {
           this.rocks[i].strength -= this.bullets[b].strength;
+          this.score += this.bullets[b].strength;
           this.bullets.splice(b, 1);
         }
       }
 
       // Check if Rock is Out
       if(this.rocks[i].isOut()) {
+        if(
+          this.rocks[i].originalStrength >= this.minRockStrength*Math.pow(2, this.levelFactor - 3) &&
+          this.rocks[i].originalStrength >= 2*this.minRockStrength
+        ) {
+          this.rocks.push(
+            // center, radius, velocity, acceleration, strength, color, image
+            new Circle(
+              [
+                this.rocks[i].center[0] - Math.round(this.rocks[i].radius/1.4),
+                this.rocks[i].center[1]
+              ],
+              Math.round(this.rocks[i].radius/1.4),
+              [
+                - this.rocks[i].velocity[0],
+                - Math.abs(this.rocks[i].velocity[1])
+              ],
+              this.rocks[i].acceleration,
+              Math.round(this.rocks[i].originalStrength/2),
+              this.rocks[i].color,
+              this.rocks[i].image
+            ),
+            new Circle(
+              [
+                this.rocks[i].center[0] + Math.round(this.rocks[i].radius/1.4),
+                this.rocks[i].center[1]
+              ],
+              Math.round(this.rocks[i].radius/1.4),
+              [
+                this.rocks[i].velocity[0],
+                - Math.abs(this.rocks[i].velocity[1])
+              ],
+              this.rocks[i].acceleration,
+              Math.round(this.rocks[i].originalStrength/2),
+              this.rocks[i].color,
+              this.rocks[i].image
+            ),
+          );
+        }
         this.rocks.splice(i, 1);
         continue;
       }
@@ -301,6 +346,14 @@ class Game {
         this.rocks[i].velocity[0] = -this.rocks[i].velocity[0];
       }
     }
+
+    // Check if cannon collided with sides
+    if(this.cannon.center[0] - this.cannon.dimensions[0]/2 < 0) {
+      this.cannon.center[0] = Math.round(this.cannon.dimensions[0]/2);
+    }
+    if(this.cannon.center[0] + this.cannon.dimensions[0]/2 > this.width) {
+      this.cannon.center[0] = this.width - Math.round(this.cannon.dimensions[0]/2);
+    }
   }
 
   createRock() {
@@ -322,7 +375,7 @@ class Game {
             0,
             this.gravity
           ],
-          this.rockStrength,
+          this.minRockStrength*Math.pow(2, this.levelFactor),
           this.colors.rock[Math.floor(Math.random() * this.colors.rock.length)],
           this.images.rock
         )
@@ -345,7 +398,7 @@ class Game {
             0,
             this.gravity
           ],
-          this.rockStrength,
+          this.minRockStrength*Math.pow(2, this.levelFactor),
           this.colors.rock[Math.floor(Math.random() * this.colors.rock.length)],
           this.images.rock
         )
@@ -357,14 +410,29 @@ class Game {
     this.bullets.push(
       // center, radius, velocity, acceleration, strength, color, image
       new Circle(
-        this.cannon.center,
+        [
+          this.cannon.center[0] + Math.round(this.cannon.dimensions[0]/4),
+          this.cannon.center[1] - Math.round(this.cannon.dimensions[1]/2),
+        ],
         this.bulletRadius,
         this.bulletVelocity,
         this.bulletAcceleration,
-        this.bulletStrength,
+        this.bulletStrength*Math.pow(2, this.levelFactor),
         this.colors.bullet,
         this.images.bullet
-      )
+      ),
+      new Circle(
+        [
+          this.cannon.center[0] - Math.round(this.cannon.dimensions[0]/4),
+          this.cannon.center[1] - Math.round(this.cannon.dimensions[1]/2),
+        ],
+        this.bulletRadius,
+        this.bulletVelocity,
+        this.bulletAcceleration,
+        this.bulletStrength*Math.pow(2, this.levelFactor),
+        this.colors.bullet,
+        this.images.bullet
+      ),
     );
   }
 
@@ -372,15 +440,19 @@ class Game {
     this.cannon.update();
     this.checkCollisions()
 
-    this.score++;
     this.interval++;
     if(this.interval % this.bulletSpawnInterval == 0) {
       this.createBullet();
     }
+
     if(this.interval == this.rockSpawnInterval) {
       this.createRock();
       this.interval = 0;
     }
+
+    if(this.score == this.levelScore*Math.pow(2, this.levelFactor)) {
+      this.levelFactor++;
+    };
 
     let self = this;
     if(FPS == 0){
@@ -423,10 +495,10 @@ class Game {
 
   setDirection(e, self) {
     if(e.keyCode == 37) {
-      self.cannon.velocity = [-1, 0];
+      self.cannon.velocity = [-2, 0];
     }
     if(e.keyCode == 39) {
-      self.cannon.velocity = [1, 0];
+      self.cannon.velocity = [2, 0];
     }
   }
 
